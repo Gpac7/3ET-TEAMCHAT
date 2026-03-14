@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3-ET TeamChat App</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root { --primary: #395971; --accent: #56b7e4; --bg: #f0f2f5; --white: #ffffff; --sent: #395971; --text: #333; }
+        body.dark-mode { --bg: #1a202c; --white: #2d3748; --primary: #1a202c; --accent: #63b3ed; --sent: #2b6cb0; --text: #eee; }
+        
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; height: 100vh; background: var(--bg); transition: 0.3s; color: var(--text); overflow: hidden; }
+        
+        /* Sidebar */
+        #sidebar { width: 320px; background: var(--white); border-right: 1px solid #4444; display: flex; flex-direction: column; }
+        .sidebar-header { padding: 20px; background: var(--primary); color: white; display: flex; align-items: center; gap: 12px; }
+        .avatar-main { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent); }
+        .item { padding: 15px; border-bottom: 1px solid #4444; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: 0.2s; }
+        .item.active { background: rgba(86, 183, 228, 0.15); border-left: 5px solid var(--accent); }
+
+        /* Main Chat */
+        #main-chat { flex: 1; display: flex; flex-direction: column; background: var(--bg); }
+        header { padding: 12px 20px; background: var(--white); border-bottom: 1px solid #4444; display: flex; justify-content: space-between; align-items: center; }
+        .header-info { display: flex; align-items: center; gap: 10px; }
+        
+        #chat-window { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+        
+        /* Messages */
+        .msg-row { display: flex; gap: 10px; max-width: 80%; position: relative; }
+        .sent-row { flex-direction: row-reverse; align-self: flex-end; }
+        .msg-content { display: flex; flex-direction: column; }
+        .bubble { padding: 10px 16px; border-radius: 18px; font-size: 0.95rem; position: relative; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .sent .bubble { background: var(--sent); color: white; border-top-right-radius: 2px; }
+        .received .bubble { background: var(--white); color: inherit; border-top-left-radius: 2px; }
+        
+        .msg-meta { display: flex; justify-content: flex-end; align-items: center; gap: 5px; font-size: 0.65rem; margin-top: 4px; opacity: 0.7; }
+        .sent .msg-meta { color: white; }
+        .tick { font-weight: bold; }
+        .tick.read { color: var(--accent); opacity: 1; }
+
+        .msg-avatar { width: 30px; height: 30px; border-radius: 50%; align-self: flex-end; margin-bottom: 15px; }
+        .react-btn { opacity: 0; cursor: pointer; font-size: 0.8rem; transition: 0.2s; }
+        .msg-row:hover .react-btn { opacity: 1; }
+        .reaction-badge { position: absolute; bottom: -8px; right: 40px; background: var(--white); border-radius: 10px; padding: 1px 5px; font-size: 0.75rem; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+
+        /* Controls */
+        .controls { padding: 15px; background: var(--white); display: flex; gap: 10px; align-items: center; border-top: 1px solid #4444; }
+        textarea { flex: 1; border: 1px solid #ddd; border-radius: 20px; padding: 10px 15px; outline: none; resize: none; background: transparent; color: inherit; }
+        .btn-round { width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; }
+        
+        /* Modals */
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 100; display: flex; align-items: center; justify-content: center; }
+        .modal { background: var(--white); padding: 30px; border-radius: 15px; width: 320px; text-align: center; }
+        .hidden { display: none !important; }
+        #mic-btn.recording { background: #ff4d4d; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body class="light-mode">
+
+    <div id="setup-modal" class="overlay">
+        <div class="modal">
+            <h2 style="color:var(--accent)">3NITYpEduTech Team Chat</h2>
+            <img id="preview-img" src="https://ui-avatars.com/api/?name=?&background=395971&color=fff" style="width:100px; height:100px; border-radius:50%; object-fit:cover; cursor:pointer;" onclick="document.getElementById('avatar-in').click()">
+            <input type="file" id="avatar-in" class="hidden" accept="image/*" onchange="loadAvatar(this)">
+            <input type="text" id="my-name-in" placeholder="Full Name" style="width:100%; padding:10px; margin:15px 0; border-radius:8px; border:1px solid #ddd;">
+            <button class="btn-round" style="width:100%; border-radius:8px;" onclick="saveProfile()">Start</button>
+        </div>
+    </div>
+
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <img id="my-avatar-side" class="avatar-main" src="">
+            <div><b id="my-name-side">...</b><br><small id="my-id-tag">ID: ...</small></div>
+        </div>
+        <div style="padding:10px; display:flex; gap:5px;">
+            <button onclick="openModal('add-modal')" style="flex:1">Add Peer</button>
+            <button onclick="openModal('group-modal')" style="flex:1; background:var(--accent); border:none; color:white;">Group</button>
+        </div>
+        <div class="list-container" id="contact-list" style="flex:1; overflow-y:auto;"></div>
+    </div>
+
+    <div id="main-chat" class="hidden">
+        <header>
+            <div class="header-info">
+                <img id="header-avatar" class="msg-avatar" style="width:40px; height:40px; margin:0;" src="">
+                <div><b id="header-name">Chat</b><br><small id="header-members" class="hidden" style="color:var(--accent); cursor:pointer">View Members</small></div>
+            </div>
+            <div style="display:flex; gap:15px; font-size:1.2rem;">
+                <span id="timer-icon" title="Auto-Delete" onclick="toggleTimer()" style="cursor:pointer">⏳</span>
+                <span title="Toggle Dark Mode" onclick="toggleTheme()" style="cursor:pointer">🌓</span>
+            </div>
+        </header>
+        <div id="chat-window"></div>
+        <div class="controls">
+            <input type="file" id="file-up" class="hidden" onchange="handleFile(this)">
+            <button class="btn-round" style="background:#eee; color:#333" onclick="document.getElementById('file-up').click()">📎</button>
+            <textarea id="msg-input" placeholder="Type a message..." rows="1"></textarea>
+            <button id="mic-btn" class="btn-round" onmousedown="startMic()" onmouseup="stopMic()">🎤</button>
+            <button class="btn-round" onclick="sendData()">➤</button>
+        </div>
+    </div>
+
+    <div id="add-modal" class="overlay hidden"><div class="modal"><h3>Add Peer</h3><input type="text" id="peer-id-input" placeholder="Peer ID"><br><br><button onclick="connectPeer()">Connect</button><button onclick="closeModal('add-modal')">X</button></div></div>
+    <div id="group-modal" class="overlay hidden"><div class="modal"><h3>Create Group</h3><input type="text" id="group-name-input" placeholder="Group Name"><br><br><button onclick="createGroup()">Create</button><button onclick="closeModal('group-modal')">X</button></div></div>
+
+    <script>
+        const myUUID = localStorage.getItem('tc_uuid') || 'U-' + Math.random().toString(36).substring(2, 9);
+        const myPeerId = 'TC-' + myUUID;
+        localStorage.setItem('tc_uuid', myUUID);
+
+        const peer = new Peer(myPeerId);
+        let activeID = null, isGroup = false, timerOn = false, myName = "", myPhoto = "";
+        let connections = {}, contacts = {}, history = {}, groups = {};
+
+        // Persistence
+        if(localStorage.getItem('tc_v11_me')) {
+            const me = JSON.parse(localStorage.getItem('tc_v11_me'));
+            myName = me.name; myPhoto = me.photo;
+            document.getElementById('setup-modal').classList.add('hidden');
+            initUI();
+        }
+        if(localStorage.getItem('tc_v11_hist')) history = JSON.parse(localStorage.getItem('tc_v11_hist'));
+        if(localStorage.getItem('tc_v11_contacts')) contacts = JSON.parse(localStorage.getItem('tc_v11_contacts'));
+
+        peer.on('open', id => document.getElementById('my-id-tag').innerText = `ID: ${id}`);
+        peer.on('connection', conn => handleConn(conn));
+
+        function loadAvatar(input) {
+            const reader = new FileReader();
+            reader.onload = e => { document.getElementById('preview-img').src = e.target.result; myPhoto = e.target.result; };
+            reader.readAsDataURL(input.files[0]);
+        }
+
+        function saveProfile() {
+            myName = document.getElementById('my-name-in').value || "User";
+            if(!myPhoto) myPhoto = `https://ui-avatars.com/api/?name=${encodeURIComponent(myName)}&background=395971&color=fff`;
+            localStorage.setItem('tc_v11_me', JSON.stringify({name: myName, photo: myPhoto}));
+            localStorage.setItem('tc_uuid', myUUID);
+            document.getElementById('setup-modal').classList.add('hidden');
+            initUI();
+        }
+
+        function initUI() {
+            document.getElementById('my-name-side').innerText = myName || 'User';
+            document.getElementById('my-avatar-side').src = myPhoto || `https://ui-avatars.com/api/?name=${encodeURIComponent(myName || 'User')}&background=395971&color=fff`;
+            renderSidebar();
+        }
+
+        function handleConn(conn) {
+            connections[conn.peer] = conn;
+
+            conn.on('open', () => {
+                conn.send({ type: 'handshake', uuid: myUUID, name: myName, photo: myPhoto, peerId: peer.id });
+            });
+
+            conn.on('data', data => {
+                if(data.type === 'handshake') {
+                    const uuid = data.uuid || 'U-' + data.peerId;
+                    contacts[uuid] = {
+                        uuid,
+                        name: data.name || 'Unknown',
+                        photo: data.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || 'Unknown')}&background=395971&color=fff`,
+                        peerId: conn.peer,
+                        id: conn.peer,
+                        type: 'peer'
+                    };
+                    saveState(); renderSidebar();
+                    return;
+                }
+
+                if(data.type === 'profile') {
+                    contacts[conn.peer] = { uuid: conn.peer, name: data.name, photo: data.photo, peerId: conn.peer, id: conn.peer, type: 'peer' };
+                    saveState(); renderSidebar();
+                    return;
+                }
+
+                if(data.type === 'react') {
+                    const key = getHistoryKeyForPeer(conn.peer);
+                    const msg = history[key]?.find(m => m.mId === data.mId);
+                    if(msg) { msg.react = data.emoji; renderChat(); }
+                } else if(data.type === 'read-receipt') {
+                    const key = getHistoryKeyForPeer(conn.peer);
+                    const msg = history[key]?.find(m => m.mId === data.mId);
+                    if(msg) { msg.status = 'read'; saveState(); if(activeID === key) renderChat(); }
+                } else if(data.type === 'group-relay') {
+                    if(!groups[data.gId]) groups[data.gId] = new Set();
+                    groups[data.gId].add(data.sender);
+                    processMsg(data.gId, data, false);
+                } else {
+                    const key = data.senderUUID || getHistoryKeyForPeer(conn.peer) || conn.peer;
+                    processMsg(key, data, false);
+                }
+            });
+        }
+
+        function sendData() {
+            const val = document.getElementById('msg-input').value.trim();
+            if(!val || !activeID) return;
+            dispatch({ type: 'text', content: val, mId: Date.now() });
+            document.getElementById('msg-input').value = '';
+        }
+
+        function handleFile(input) {
+            const file = input.files[0];
+            const reader = new FileReader();
+            reader.onload = e => dispatch({ type: 'file', content: e.target.result, fileName: file.name, mId: Date.now() });
+            reader.readAsDataURL(file);
+        }
+
+        let recorder;
+        async function startMic() {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            recorder = new MediaRecorder(stream);
+            let chunks = [];
+            recorder.ondataavailable = e => chunks.push(e.data);
+            recorder.onstop = () => {
+                const reader = new FileReader();
+                reader.onload = e => dispatch({ type: 'audio', content: e.target.result, mId: Date.now() });
+                reader.readAsDataURL(new Blob(chunks, { type: 'audio/webm' }));
+            };
+            recorder.start();
+            document.getElementById('mic-btn').classList.add('recording');
+        }
+        function stopMic() { if(recorder) recorder.stop(); document.getElementById('mic-btn').classList.remove('recording'); }
+
+        function dispatch(data) {
+            const payload = { ...data, sender: myName, photo: myPhoto, timer: timerOn, senderUUID: myUUID };
+            if(isGroup) {
+                Object.values(connections).forEach(c => c.open && c.send({ ...payload, type: 'group-relay', gId: activeID }));
+                processMsg(activeID, payload, true);
+            } else {
+                const contact = contacts[activeID];
+                if(!contact?.peerId) return;
+                const c = connections[contact.peerId];
+                if(c && c.open) { c.send(payload); processMsg(activeID, payload, true); }
+            }
+        }
+
+        function getHistoryKeyForPeer(peerId) {
+            return Object.values(contacts).find(c => c.peerId === peerId)?.uuid || peerId;
+        }
+
+        function processMsg(id, data, isMe) {
+            if(!history[id]) history[id] = [];
+            const msg = { ...data, role: isMe ? 'sent' : 'received', react: '', status: isMe ? 'sent' : '', time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) };
+            history[id].push(msg);
+            saveState();
+
+            if(activeID === id) {
+                renderChat();
+                if(!isGroup && !isMe) {
+                    const contact = contacts[id];
+                    if(contact?.peerId && connections[contact.peerId] && connections[contact.peerId].open) {
+                        connections[contact.peerId].send({ type: 'read-receipt', mId: data.mId });
+                    }
+                }
+            }
+
+            if(data.timer) setTimeout(() => { history[id] = history[id].filter(m => m.mId !== data.mId); saveState(); if(activeID === id) renderChat(); }, 60000);
+        }
+
+        function renderChat() {
+            const win = document.getElementById('chat-window'); win.innerHTML = '';
+            (history[activeID] || []).forEach(m => {
+                const row = document.createElement('div');
+                row.className = `msg-row ${m.role}-row ${m.role}`;
+                let body = m.content;
+                if(m.type === 'file') body = `<a href="${m.content}" download="${m.fileName}" style="color:inherit">📎 ${m.fileName}</a>`;
+                if(m.type === 'audio') body = `<audio src="${m.content}" controls style="width:180px;"></audio>`;
+
+                let metaInfo = m.time;
+                if (m.role === 'sent' && !isGroup) {
+                    const tickClass = m.status === 'read' ? 'tick read' : 'tick';
+                    const tickSymbol = m.status === 'read' ? '✓✓' : '✓';
+                    metaInfo += ` <span class="${tickClass}">${tickSymbol}</span>`;
+                }
+
+                row.innerHTML = `
+                    <img src="${m.photo || ''}" class="msg-avatar">
+                    <div class="msg-content">
+                        <div class="bubble">
+                            ${body}
+                            <div class="msg-meta">${metaInfo}</div>
+                        </div>
+                        <span class="react-btn" onclick="addReact(${m.mId})">👍</span>
+                    </div>
+                    ${m.react ? `<div class="reaction-badge">${m.react}</div>` : ''}
+                `;
+                win.appendChild(row);
+            });
+            win.scrollTop = win.scrollHeight;
+        }
+
+        function addReact(mId) {
+            const msg = history[activeID]?.find(m => m.mId === mId);
+            if(!msg) return;
+            msg.react = msg.react ? '' : '👍';
+            if(!isGroup) {
+                const contact = contacts[activeID];
+                if(contact?.peerId && connections[contact.peerId] && connections[contact.peerId].open) {
+                    connections[contact.peerId].send({ type: 'react', mId, emoji: msg.react });
+                }
+            }
+            saveState(); renderChat();
+        }
+
+        function renderSidebar() {
+            const list = document.getElementById('contact-list'); list.innerHTML = '';
+            Object.values(contacts).forEach(c => {
+                const key = c.uuid || c.id;
+                const div = document.createElement('div');
+                div.className = `item ${activeID === key ? 'active' : ''}`;
+                div.onclick = () => {
+                    activeID = key;
+                    isGroup = key.startsWith('GRP');
+                    document.getElementById('main-chat').classList.remove('hidden');
+                    document.getElementById('header-name').innerText = c.name;
+                    document.getElementById('header-avatar').src = c.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.name)}&background=395971&color=fff`;
+                    document.getElementById('header-members').className = isGroup ? 'member-count' : 'hidden';
+
+                    if (!isGroup && connections[c.peerId] && connections[c.peerId].open) {
+                        let updated = false;
+                        (history[key] || []).forEach(m => {
+                            if (m.role === 'received' && !m.readSent) {
+                                connections[c.peerId].send({ type: 'read-receipt', mId: m.mId });
+                                m.readSent = true;
+                                updated = true;
+                            }
+                        });
+                        if (updated) saveState();
+                    }
+
+                    renderChat(); renderSidebar();
+                };
+                div.innerHTML = `<img src="${c.photo || ''}" class="msg-avatar" style="margin:0"><div style="flex:1"><b>${c.name}</b><br><small>${c.id || c.peerId || key}</small></div>`;
+                list.appendChild(div);
+            });
+        }
+
+        function createGroup() {
+            const name = document.getElementById('group-name-input').value || "Group";
+            const gID = 'GRP-' + Math.random().toString(36).substring(2, 5).toUpperCase();
+            contacts[gID] = { id: gID, name: "[GRP] " + name, photo: "", type: 'group' };
+            saveState(); renderSidebar(); closeModal('group-modal');
+        }
+
+        function saveState() {
+            localStorage.setItem('tc_v11_hist', JSON.stringify(history));
+            localStorage.setItem('tc_v11_contacts', JSON.stringify(contacts));
+        }
+
+        function toggleTimer() { timerOn = !timerOn; document.getElementById('timer-icon').style.color = timerOn ? 'red' : 'inherit'; }
+        function toggleTheme() { document.body.classList.toggle('dark-mode'); }
+        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+        function connectPeer() { const id = document.getElementById('peer-id-input').value.trim(); if(id) { handleConn(peer.connect(id)); closeModal('add-modal'); } }
+    </script>
+</body>
+</html>
