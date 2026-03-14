@@ -1,0 +1,21 @@
+# Netlify Configuration for TeamChat 12.0
+
+[build]
+  publish = "."
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Prevents other sites from framing your app (security)
+    X-Frame-Options = "DENY"
+    # Helps prevent XSS attacks
+    X-Content-Type-Options = "nosniff"
+    # Enables strict HTTPS
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+    # Allows the browser to use WebRTC and PeerJS signaling properly
+    Content-Security-Policy = "default-src 'self' https://unpkg.com https://*.peerjs.com; img-src 'self' data: https://ui-avatars.com; media-src 'self' data: blob:; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline';"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
